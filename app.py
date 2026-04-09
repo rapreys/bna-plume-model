@@ -437,6 +437,60 @@ else:
 - Population in box: **{population:,}**
 - Population exposure: **{population_exposure:,.2f} person·µg·hr/m³**
 """)
+    # ------------------------------------------------------------
+    # EXPOSURE vs EMISSION PERCENTAGE
+    # ------------------------------------------------------------
+    st.subheader("5. Exposure sensitivity to emission rate")
+    st.caption("How box exposure scales if actual emissions are lower than the "
+               "entered rate. Useful for sensitivity analysis or representing "
+               "reduced-operations scenarios. 100% = current input.")
+
+    pct = np.linspace(0, 100, 101)          # 0% to 100% in 1% steps
+    scale = pct / 100.0
+    mean_exp_curve = mean_exposure * scale
+    max_exp_curve  = max_exposure  * scale
+
+    fig5, (ax_a, ax_b) = plt.subplots(1, 2, figsize=(12, 4.5))
+
+    # Mean exposure panel
+    ax_a.plot(pct, mean_exp_curve, color='steelblue', lw=2.2)
+    ax_a.fill_between(pct, mean_exp_curve, alpha=0.15, color='steelblue')
+    ax_a.axvline(100, color='grey', lw=1, ls=':')
+    ax_a.scatter([100], [mean_exposure], color='steelblue',
+                 s=60, zorder=5, label=f'Current: {mean_exposure:.3f}')
+    ax_a.set_xlabel('Emission rate (% of current)')
+    ax_a.set_ylabel(f'Mean {EMISSION_TYPE} exposure (µg·hr/m³)')
+    ax_a.set_title(f'Mean Exposure vs Emission %\n({exposure_hours:.2f} hr window)')
+    ax_a.set_xlim(0, 100)
+    ax_a.set_ylim(bottom=0)
+    ax_a.grid(True, alpha=0.3)
+    ax_a.legend(fontsize=9, loc='upper left')
+
+    # Max exposure panel
+    ax_b.plot(pct, max_exp_curve, color='crimson', lw=2.2)
+    ax_b.fill_between(pct, max_exp_curve, alpha=0.15, color='crimson')
+    ax_b.axvline(100, color='grey', lw=1, ls=':')
+    ax_b.scatter([100], [max_exposure], color='crimson',
+                 s=60, zorder=5, label=f'Current: {max_exposure:.3f}')
+    ax_b.set_xlabel('Emission rate (% of current)')
+    ax_b.set_ylabel(f'Max {EMISSION_TYPE} exposure (µg·hr/m³)')
+    ax_b.set_title(f'Max Exposure vs Emission %\n({exposure_hours:.2f} hr window)')
+    ax_b.set_xlim(0, 100)
+    ax_b.set_ylim(bottom=0)
+    ax_b.grid(True, alpha=0.3)
+    ax_b.legend(fontsize=9, loc='upper left')
+
+    # Optional NAAQS reference line on max panel (only if current max is within range)
+    if NAAQS_VALUE is not None:
+        naaqs_exp = NAAQS_VALUE * exposure_hours
+        if naaqs_exp <= max_exp_curve.max() * 1.2:
+            ax_b.axhline(naaqs_exp, color='darkorange', lw=1.3, ls='--',
+                         label=f'NAAQS ({NAAQS_VALUE} µg/m³ × {exposure_hours:.1f} hr)')
+            ax_b.legend(fontsize=9, loc='upper left')
+
+    plt.tight_layout()
+    st.pyplot(fig5)
+    plt.close(fig5)
 
 # ------------------------------------------------------------
 # SUMMARY TABLE
