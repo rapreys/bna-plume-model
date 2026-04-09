@@ -24,10 +24,11 @@ st.caption("Screening-level dispersion model for emissions from Nashville Intern
 with st.sidebar:
     st.header("Model Inputs")
 
-    Q_tons_day = st.number_input(
-        "Emission rate (metric tons/day)",
-        min_value=0.0, max_value=100.0, value=8.096, step=0.1,
-        help="Daily emission rate of the pollutant in metric tons."
+    Q_g_s = st.number_input(
+        "Emission rate (g/s)",
+        min_value=0.0, max_value=5000.0, value=93.7, step=1.0, format="%.4f",
+        help="Emission rate in grams per second. "
+             "For reference: 1 metric ton/day ≈ 11.57 g/s."
     )
 
     STABILITY = st.selectbox(
@@ -43,7 +44,7 @@ with st.sidebar:
     )
 
     WIND_DIR_DEG = st.slider(
-        "Wind direction (degrees from south)",
+        "Wind direction (degrees, FROM)",
         min_value=0, max_value=360, value=180, step=5,
         help=("Meteorological convention: direction wind is COMING FROM.\n"
               "0/360 = N, 90 = E, 180 = S (Nashville prevailing), 270 = W")
@@ -83,11 +84,41 @@ with st.sidebar:
         help="Smaller = more zoomed in. Try 0.08–0.10 for low emissions, 0.20 for high."
     )
 
-# ------------------------------------------------------------
-# MODEL CODE (unchanged from notebook version)
-# ------------------------------------------------------------
-Q_g_s = Q_tons_day * 1e6 / 86400   # tons/day -> g/s
+    st.markdown("---")
+    st.header("Box Exposure")
 
+    north = st.number_input(
+        "North latitude", min_value=35.9, max_value=36.4,
+        value=36.2226, step=0.001, format="%.4f"
+    )
+    south = st.number_input(
+        "South latitude", min_value=35.9, max_value=36.4,
+        value=36.1473, step=0.001, format="%.4f"
+    )
+    east = st.number_input(
+        "East longitude", min_value=-86.9, max_value=-86.4,
+        value=-86.6394, step=0.001, format="%.4f"
+    )
+    west = st.number_input(
+        "West longitude", min_value=-86.9, max_value=-86.4,
+        value=-86.7096, step=0.001, format="%.4f"
+    )
+
+    exposure_hours = st.number_input(
+        "Exposure duration (hours)",
+        min_value=0.1, max_value=24.0, value=1.0, step=0.1,
+        help="Time window for integrated exposure calculation."
+    )
+
+    population = st.number_input(
+        "Population in box",
+        min_value=0, max_value=1_000_000, value=20000, step=1000,
+        help="Assumed number of people uniformly in the box (screening only)."
+    )
+
+# ------------------------------------------------------------
+# MODEL CODE
+# ------------------------------------------------------------
 BNA_LAT = 36.1245
 BNA_LON = -86.6782
 M_PER_DEG_LAT = 111_320
@@ -151,6 +182,9 @@ def fmt_conc(v):
 dirs = ['N','NE','E','SE','S','SW','W','NW','N']
 plume_dir = dirs[round(((WIND_DIR_DEG + 180) % 360) / 45)]
 
+# For display convenience
+Q_tons_day = Q_g_s * 86400 / 1e6
+
 # ------------------------------------------------------------
 # PLOT 1: MAP HEATMAP
 # ------------------------------------------------------------
@@ -163,13 +197,9 @@ LON, LAT = np.meshgrid(lon_1d, lat_1d)
 Xl, Yl = lonlat_to_local(LON, LAT, WIND_DIR_DEG)
 C_ugm3 = gaussian_plume(Xl, Yl, Q_g_s, U_WIND, STABILITY) * 1e6
 
-# Use a grid-INDEPENDENT reference for the colorbar max. The Gaussian plume
-# has a singularity at the source (C -> inf as x -> 0), so the grid-sampled
-# max depends on which cell happens to fall closest to the source along the
-# centerline -- which changes as the plume rotates. Computing the reference
-# concentration analytically at a fixed downwind distance makes the colorbar
-# (and the visible plume area) consistent across all wind directions.
-ref_dist = 200.0  # m downwind on centerline
+# Grid-INDEPENDENT colorbar reference: analytical centerline concentration
+# at a fixed reference distance, so the colorbar doesn't jump when the plume rotates.
+ref_dist = 200.0  # m
 cmax = (Q_g_s / (np.pi * U_WIND
                  * sigma_y(ref_dist, STABILITY)
                  * sigma_z(ref_dist, STABILITY))) * 1e6
@@ -210,6 +240,13 @@ if len(pos) > 0:
     cbar.ax.yaxis.set_major_formatter(mticker.LogFormatter(base=10, labelOnlyBase=False))
     cbar.ax.yaxis.set_minor_locator(mticker.NullLocator())
 
+    # Overlay the exposure box (if it's a valid box)
+    if (north > south) and (east > west):
+        box_lons = [west, east, east, west, west]
+        box_lats = [south, south, north, north, south]
+        ax.plot(box_lons, box_lats, color='blue', linewidth=2, ls='-',
+                label='Exposure box', zorder=4)
+
     ax.plot(BNA_LON, BNA_LAT, 'w^', ms=16,
             markeredgecolor='k', markeredgewidth=2,
             zorder=5, label='BNA Airport')
@@ -217,7 +254,7 @@ if len(pos) > 0:
     ax.set_ylabel('Latitude')
     ax.set_title(
         f'Ground-level {EMISSION_TYPE} Plume over Nashville\n'
-        f'Q = {Q_tons_day} MT/day ({Q_g_s:.4f} g/s)  |  u = {U_WIND} m/s  |  '
+        f'Q = {Q_g_s:.2f} g/s ({Q_tons_day:.3f} MT/day)  |  u = {U_WIND} m/s  |  '
         f'Stability {STABILITY}  |  Wind from {WIND_DIR_DEG}° → plume to {plume_dir}'
     )
     ax.legend(loc='upper right', fontsize=10,
@@ -258,7 +295,7 @@ ax.set_xlabel('Downwind distance (km)')
 ax.set_ylabel(f'Centreline {EMISSION_TYPE} concentration (µg/m³)')
 ax.set_title(
     f'Centreline {EMISSION_TYPE} Concentration vs Downwind Distance\n'
-    f'Q = {Q_tons_day} MT/day ({Q_g_s:.4f} g/s)  |  u = {U_WIND} m/s  |  Stability {STABILITY}'
+    f'Q = {Q_g_s:.2f} g/s  |  u = {U_WIND} m/s  |  Stability {STABILITY}'
 )
 ax.legend(fontsize=9)
 ax.grid(True, alpha=0.3)
@@ -299,6 +336,109 @@ st.pyplot(fig3)
 plt.close(fig3)
 
 # ------------------------------------------------------------
+# PLOT 4 + BOX EXPOSURE CALCULATION
+# ------------------------------------------------------------
+st.subheader("4. Box exposure")
+
+if not ((north > south) and (east > west)):
+    st.error("Invalid box: North must be greater than South, and East must be greater than West.")
+else:
+    nx_box, ny_box = 150, 150
+    lon_box = np.linspace(west, east, nx_box)
+    lat_box = np.linspace(south, north, ny_box)
+    LON_box, LAT_box = np.meshgrid(lon_box, lat_box)
+
+    X_box, Y_box = lonlat_to_local(LON_box, LAT_box, WIND_DIR_DEG)
+    C_box_ugm3 = gaussian_plume(X_box, Y_box, Q_g_s, U_WIND, STABILITY) * 1e6
+
+    # Area
+    width_m  = (east - west) * M_PER_DEG_LON
+    height_m = (north - south) * M_PER_DEG_LAT
+    area_m2  = abs(width_m * height_m)
+    area_km2 = area_m2 / 1e6
+
+    # Stats
+    mean_conc = float(np.mean(C_box_ugm3))
+    max_conc  = float(np.max(C_box_ugm3))
+    min_conc  = float(np.min(C_box_ugm3))
+
+    # Exposure
+    mean_exposure = mean_conc * exposure_hours
+    max_exposure  = max_conc  * exposure_hours
+    population_exposure = mean_exposure * population
+
+    # --- Box map plot ---
+    fig4, ax = plt.subplots(figsize=(10, 8))
+    pad = 0.01
+    ax.set_xlim(west - pad, east + pad)
+    ax.set_ylim(south - pad, north + pad)
+    ax.set_aspect(1.0 / np.cos(np.radians(BNA_LAT)))
+    try:
+        cx.add_basemap(ax, crs='EPSG:4326',
+                       source=cx.providers.OpenStreetMap.Mapnik, zoom=12)
+    except Exception as e:
+        st.warning(f"Basemap could not load ({e}).")
+
+    positive_vals = C_box_ugm3[C_box_ugm3 > 0]
+    if len(positive_vals) > 0:
+        # Reuse the grid-independent cmax from the main map so the two color
+        # scales are comparable.
+        cmin_box = max(positive_vals.min(), cmax * 1e-4)
+        if cmin_box < cmax:
+            levels_box = np.geomspace(cmin_box, cmax, 25)
+            norm_box = mcolors.LogNorm(vmin=cmin_box, vmax=cmax)
+            cf_box = ax.contourf(LON_box, LAT_box, C_box_ugm3,
+                                 levels=levels_box, norm=norm_box,
+                                 cmap='YlOrRd', alpha=0.6, zorder=2)
+            cbar_box = plt.colorbar(cf_box, ax=ax, shrink=0.8, pad=0.02)
+            cbar_box.set_label(f'{EMISSION_TYPE} concentration (µg/m³)')
+
+    box_lons = [west, east, east, west, west]
+    box_lats = [south, south, north, north, south]
+    ax.plot(box_lons, box_lats, color='blue', linewidth=2.5,
+            label='Exposure box', zorder=4)
+
+    ax.plot(BNA_LON, BNA_LAT, 'w^', ms=14,
+            markeredgecolor='k', markeredgewidth=2,
+            zorder=5, label='BNA Airport')
+
+    ax.set_xlabel("Longitude")
+    ax.set_ylabel("Latitude")
+    ax.set_title(f"Exposure Box — {EMISSION_TYPE}")
+    ax.legend(loc='upper right', fontsize=9,
+              facecolor='white', edgecolor='grey', framealpha=0.9)
+    plt.tight_layout()
+    st.pyplot(fig4)
+    plt.close(fig4)
+
+    # --- Box summary ---
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.markdown(f"""
+**Box geometry**
+- North: **{north:.4f}**
+- South: **{south:.4f}**
+- East:  **{east:.4f}**
+- West:  **{west:.4f}**
+- Area:  **{area_km2:.3f} km²** ({area_m2:,.0f} m²)
+
+**Concentration in box ({EMISSION_TYPE})**
+- Mean: **{mean_conc:.4f} µg/m³**
+- Max:  **{max_conc:.4f} µg/m³**
+- Min:  **{min_conc:.4e} µg/m³**
+""")
+    with col_b:
+        st.markdown(f"""
+**Exposure over {exposure_hours:.2f} hr**
+- Mean exposure: **{mean_exposure:.4f} µg·hr/m³**
+- Max exposure:  **{max_exposure:.4f} µg·hr/m³**
+
+**Population screening estimate**
+- Population in box: **{population:,}**
+- Population exposure: **{population_exposure:,.2f} person·µg·hr/m³**
+""")
+
+# ------------------------------------------------------------
 # SUMMARY TABLE
 # ------------------------------------------------------------
 st.subheader("Summary")
@@ -313,7 +453,7 @@ with col1:
     st.markdown(f"""
 **Inputs**
 - Emission type: **{EMISSION_TYPE}**
-- Emission rate: **{Q_tons_day} MT/day** ({Q_g_s:.4f} g/s)
+- Emission rate: **{Q_g_s:.4f} g/s** ({Q_tons_day:.4f} MT/day)
 - Wind speed: **{U_WIND} m/s**
 - Stability class: **{STABILITY}**
 - Wind from: **{WIND_DIR_DEG}°** → plume to **{plume_dir}**
