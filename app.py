@@ -163,14 +163,23 @@ LON, LAT = np.meshgrid(lon_1d, lat_1d)
 Xl, Yl = lonlat_to_local(LON, LAT, WIND_DIR_DEG)
 C_ugm3 = gaussian_plume(Xl, Yl, Q_g_s, U_WIND, STABILITY) * 1e6
 
-cmax_raw = C_ugm3.max()
-floor = max(1e-8, cmax_raw * 1e-4)
+# Use a grid-INDEPENDENT reference for the colorbar max. The Gaussian plume
+# has a singularity at the source (C -> inf as x -> 0), so the grid-sampled
+# max depends on which cell happens to fall closest to the source along the
+# centerline -- which changes as the plume rotates. Computing the reference
+# concentration analytically at a fixed downwind distance makes the colorbar
+# (and the visible plume area) consistent across all wind directions.
+ref_dist = 200.0  # m downwind on centerline
+cmax = (Q_g_s / (np.pi * U_WIND
+                 * sigma_y(ref_dist, STABILITY)
+                 * sigma_z(ref_dist, STABILITY))) * 1e6
+floor = max(1e-8, cmax * 1e-4)
 
 C_plot = np.ma.masked_less_equal(C_ugm3, floor)
 pos    = C_ugm3[C_ugm3 > floor]
 
 if len(pos) > 0:
-    cmin, cmax = pos.min(), pos.max()
+    cmin = pos.min()
     levels = np.geomspace(cmin, cmax, 30)
     norm   = mcolors.LogNorm(vmin=cmin, vmax=cmax)
 
