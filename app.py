@@ -43,7 +43,7 @@ with st.sidebar:
     )
 
     WIND_DIR_DEG = st.slider(
-        "Wind direction (degrees, FROM)",
+        "Wind direction (degrees from south)",
         min_value=0, max_value=360, value=180, step=5,
         help=("Meteorological convention: direction wind is COMING FROM.\n"
               "0/360 = N, 90 = E, 180 = S (Nashville prevailing), 270 = W")
@@ -78,7 +78,7 @@ with st.sidebar:
     )
 
     MAP_EXTENT_DEG = st.slider(
-        "Map extent (± degrees from BNA)",
+        "Zoom",
         min_value=0.04, max_value=0.30, value=0.08, step=0.01,
         help="Smaller = more zoomed in. Try 0.08–0.10 for low emissions, 0.20 for high."
     )
