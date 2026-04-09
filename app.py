@@ -177,6 +177,7 @@ if len(pos) > 0:
     fig1, ax = plt.subplots(figsize=(12, 10))
     ax.set_xlim(lon_1d.min(), lon_1d.max())
     ax.set_ylim(lat_1d.min(), lat_1d.max())
+    ax.set_aspect(1.0 / np.cos(np.radians(BNA_LAT)))
     try:
         cx.add_basemap(ax, crs='EPSG:4326',
                        source=cx.providers.OpenStreetMap.Mapnik, zoom=12)
